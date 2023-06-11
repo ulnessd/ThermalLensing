@@ -9,7 +9,7 @@ The software runs on Python and has several dependencies that can be installed v
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/your-repo-name.git
+git clone https://github.com/ulnessd/ThermalLensing.git
 ```
 2. Install the dependencies:
 Navigate to the project directory and run the following command:
