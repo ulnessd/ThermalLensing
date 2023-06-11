@@ -1,4 +1,4 @@
-# Thorlabs Camera and Shutter Control Application
+# Thermal Lensing Application
 
 This is a Python GUI application designed to control a Thorlabs DCC series camera and a shutter controlled by a PIC10F200 microcontroller. The communication with the PIC10F200 microcontroller is facilitated using a DTech FTDI USB to TTL Serial Adapter 5V. The application is built using Tkinter for GUI and PySerial for serial communication.
 
