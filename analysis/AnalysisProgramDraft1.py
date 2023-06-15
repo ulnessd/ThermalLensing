@@ -38,7 +38,7 @@ for video_file in video_files:
     out_subtracted = cv2.VideoWriter(os.path.join(output_directory, f'{base_name}{run}_subtract.avi'), fourcc, frame_rate, frame_size, isColor=False)
 
     # Load the timestamps
-    timestamps = pd.read_csv(os.path.join(timestamps_directory, f'{base_name}Red_timestamps_run{run+1}.csv'))
+    timestamps = pd.read_csv(os.path.join(timestamps_directory, f'{base_name}Red_timestamps_run{run}.csv'))
 
     # Frame counter and lists to store frames and valid timestamps
     frame_counter = 0
