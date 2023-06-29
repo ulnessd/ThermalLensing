@@ -1,0 +1,217 @@
+import tkinter as tk
+from tkinter import filedialog
+from tkinter import scrolledtext
+import cv2
+import numpy as np
+import os
+import pandas as pd
+import threading
+
+class Application(tk.Frame):
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.master = master
+        self.pack()
+        self.create_widgets()
+
+    def create_widgets(self):
+        # Folder selection button
+        self.select_button = tk.Button(self)
+        self.select_button["text"] = "Select Folder"
+        self.select_button["command"] = self.select_folder
+        self.select_button.pack(side="top")
+
+        # Start processing button
+        self.start_button = tk.Button(self)
+        self.start_button["text"] = "Start Processing"
+        self.start_button["command"] = self.start_processing
+        self.start_button.pack(side="top")
+
+        # Output console
+        self.console = scrolledtext.ScrolledText(self, state='disabled')
+        self.console.pack()
+
+        # Quit button
+        self.quit = tk.Button(self, text="QUIT", fg="red", command=self.master.destroy)
+        self.quit.pack(side="bottom")
+
+    def select_folder(self):
+        self.folder_path = filedialog.askdirectory()
+        self.console_insert(f'Selected folder: {self.folder_path}\n')
+
+    def process_videos(self, directory):
+        # Directory paths
+        video_directory = directory  # Replace with your video directory
+        timestamps_directory = directory  # Replace with your timestamps directory
+        # Get the list of all video files
+        video_files = [f for f in os.listdir(video_directory) if f.endswith('.avi')]
+
+        # Process each video file
+        for video_file in video_files:
+            # Parse the file name
+            base_name, run = os.path.splitext(video_file)[0].split('Red')
+            run = int(run)
+
+            # Create the output directories if they don't exist
+            output_directory = os.path.join(video_directory, base_name, f'{base_name}{run}')
+            os.makedirs(output_directory, exist_ok=True)
+
+            # Load the video
+            cap = cv2.VideoCapture(os.path.join(video_directory, video_file))
+
+            # Get frame rate and frame size for video writer
+            frame_rate = cap.get(cv2.CAP_PROP_FPS)
+            frame_size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+
+            # Define the codec and create VideoWriter objects
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            out_flipped = cv2.VideoWriter(os.path.join(output_directory, f'{base_name}{run}_flipped.avi'), fourcc,
+                                          frame_rate, frame_size, isColor=False)
+            out_subtracted = cv2.VideoWriter(os.path.join(output_directory, f'{base_name}{run}_subtract.avi'), fourcc,
+                                             frame_rate, frame_size, isColor=False)
+            out_diff = cv2.VideoWriter(os.path.join(output_directory, f'{base_name}{run}_subtract_diff.avi'), fourcc,
+                                       frame_rate, frame_size, isColor=False)  # for unblurred diff frames
+            out_gf = cv2.VideoWriter(os.path.join(output_directory, f'{base_name}{run}_subtract_diff_GF.avi'), fourcc,
+                                     frame_rate, frame_size, isColor=False)
+            global_max_gf = 0
+
+            # Load the timestamps
+            timestamps = pd.read_csv(os.path.join(timestamps_directory, f'{base_name}Red_timestamps_run{run}.csv'))
+
+            # Frame counter and lists to store frames and valid timestamps
+            frame_counter = 0
+            frame_list = []
+            valid_timestamps = []
+
+            # Read video frame by frame
+            while True:
+                ret, frame = cap.read()
+
+                # Break the loop if the frame cannot be read (end of video)
+                if not ret:
+                    break
+
+                # Convert the frame to grayscale and flip vertically
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                frame = cv2.flip(frame, 0)
+
+                # Write the flipped frame to the new video
+                out_flipped.write(frame)
+
+                # Check if frame contains a row filled with zeros
+                if np.any(np.all(frame == 0, axis=1)):
+                    continue  # skip this frame
+
+                # Append the frame to the frame list and corresponding timestamp
+                frame_list.append(frame)
+                valid_timestamps.append(timestamps.iloc[frame_counter])
+
+                # Increment the frame counter
+                frame_counter += 1
+
+            # Release the flipped video
+            out_flipped.release()
+
+            # Convert frame list into numpy array for easier manipulation
+            frame_array = np.array(frame_list)
+
+            # Convert valid_timestamps into a DataFrame
+            valid_timestamps = pd.DataFrame(valid_timestamps)
+
+            # Identify frames which have timestamps less than 2 seconds
+            frames_before_2s = frame_array[valid_timestamps['timestamp'] < 2]
+
+            # Average these frames
+            average_frame = np.mean(frames_before_2s, axis=0)
+
+            # Subtract the average frame from each frame and normalize
+            subtract_frame_array = np.abs(frame_array.astype(np.int32) - average_frame.astype(np.int32))
+            global_min_subtract = np.min(subtract_frame_array)
+            global_max_subtract = np.max(subtract_frame_array)
+            subtract_frame_array = ((subtract_frame_array - global_min_subtract) * (
+                    255 / (global_max_subtract - global_min_subtract))).astype(np.uint8)
+
+            # Create a list to store diff frames
+            diff_frame_list = []
+
+            # Write the subtracted frames to the new video and generate marginal histograms
+            for i, subtract_frame in enumerate(subtract_frame_array):
+                out_subtracted.write(subtract_frame)
+
+                # Create the diff frames
+                if i > 0:  # Skip the first frame as it has no previous frame to subtract from
+                    diff_frame = cv2.absdiff(subtract_frame_array[i - 1], subtract_frame)
+                    diff_frame_list.append(diff_frame)
+
+            # Close the subtracted video
+            out_subtracted.release()
+
+            # Normalize diff frames
+            diff_frame_array = np.array(diff_frame_list)
+            global_min_diff = np.min(diff_frame_array)
+            global_max_diff = np.max(diff_frame_array)
+            diff_frame_array = (
+                    (diff_frame_array - global_min_diff) * (255 / (global_max_diff - global_min_diff))).astype(
+                np.uint8)
+
+            # Write diff frames to the new video
+            for diff_frame in diff_frame_array:
+                out_diff.write(diff_frame)
+
+            # Close the diff video
+            out_diff.release()
+
+            # Find the global max for Gaussian filtered frames
+            for diff_frame in diff_frame_array:
+                diff_frame_gf = cv2.GaussianBlur(diff_frame, (25, 25), 0)
+                global_max_gf = max(global_max_gf, diff_frame_gf.max())
+
+            # Write the Gaussian filtered frames to the new video
+            for diff_frame in diff_frame_array:
+                diff_frame_gf = cv2.GaussianBlur(diff_frame, (25, 25), 0)
+                diff_frame_gf = ((diff_frame_gf / global_max_gf) * 255).astype(np.uint8)
+                out_gf.write(diff_frame_gf)
+
+            out_gf.release()
+
+            # Save the timestamps to the individual subdirectory
+            valid_timestamps.to_csv(os.path.join(output_directory, f'{base_name}Red_timestamps_run{run}.csv'),
+                                    index=False)
+
+            self.console_insert(f"Processed {base_name} run {run}\n")
+
+        return
+
+    def start_processing(self):
+        self.console_insert('Processing started...\n')
+
+        # Start your function in a new thread
+        process_thread = threading.Thread(target=self.process_videos, args=(self.folder_path,))
+        process_thread.start()
+
+        # Start a new thread to wait for the process_thread to finish
+        monitor_thread = threading.Thread(target=self.monitor_thread, args=(process_thread,))
+        monitor_thread.start()
+
+    def monitor_thread(self, thread):
+        # Wait for the thread to finish
+        thread.join()
+
+        # This will execute after the thread has finished
+        self.console_insert('Processing complete...\n')
+
+    def console_insert(self, text):
+        self.console.config(state='normal')
+        self.console.insert('end', text)
+        self.console.config(state='disabled')
+
+        # Add this line to automatically scroll to the end
+        self.console.yview(tk.END)
+
+        # Update the tkinter mainloop to reflect the new text in the console
+        self.update_idletasks()
+
+
+root = tk.Tk()
+app = Application(master=root)
+app.mainloop()
