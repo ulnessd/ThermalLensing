@@ -170,6 +170,9 @@ class Application(tk.Frame):
                 self.camera = PiCamera()
                 self.camera.resolution = (320, 240)
                 self.camera.framerate = 60
+                self.camera.exposure_mode = 'off'  # Turn off automatic exposure mode
+                self.camera.shutter_speed = 7500
+
                 self.rawCapture = PiRGBArray(self.camera)  # Create an array for the captured frames
                 # Create a new window
                 self.new_window = tk.Toplevel(self.master)
@@ -234,8 +237,10 @@ class Application(tk.Frame):
             for run in range(num_runs):
                 # Open the camera
                 camera = PiCamera()
-                camera.resolution = (1240, 1080)
-                #camera.framerate = 10
+                camera.resolution = (720, 720)
+                camera.framerate = 90
+                camera.exposure_mode = 'off'  # Turn off automatic exposure mode
+                camera.shutter_speed = 7500
 
                 self.console_text.insert(tk.END, f"Beginning run {run + 1}\n","green")
                 self.update()
@@ -263,7 +268,7 @@ class Application(tk.Frame):
                         self.console_text.see(tk.END)
                         self.update()
 
-                    if current_time - start_time > float(self.recovery_time_var.get())+ float(self.laser_time_var.get())+int(self.bg_time_var.get()) and toggle_count == 2:
+                    if current_time - start_time > float(self.recovery_time_var.get())+ float(self.laser_time_var.get())+float(self.bg_time_var.get()) and toggle_count == 2:
                         self.console_text.insert(tk.END, f"Run {run + 1} is complete.\n","red")
                         self.console_text.see(tk.END)
                         self.update()
@@ -304,4 +309,4 @@ def main():
     app.mainloop()
 
 if __name__ == "__main__":
-    main()
+    main()         
