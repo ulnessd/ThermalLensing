@@ -60,7 +60,7 @@ for video_file in glob.glob(os.path.join(directory, "*Red_average_subtract.avi")
         print(f"Processed {video_file}")
 
 # Writing all data to a single CSV file
-output_csv = os.path.join(directory, "KineticsLaserConduction.csv")
+output_csv = os.path.join(directory, "KineticsConduction.csv")
 with open(output_csv, 'w', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(['Frame Number'] + list(all_data.keys()))
