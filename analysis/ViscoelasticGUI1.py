@@ -127,6 +127,7 @@ class DataApp:
             self.start_x = None
             self.start_y = None
             self.rect = None
+
     def export_peaks(self):
         filename = self.filename_entry.get()
         full_path = os.path.join(self.file_directory, filename)  # Combine directory path with filename
@@ -152,6 +153,8 @@ class DataApp:
                 plot_obj.remove()
             self.extrema_plots.clear()
 
+            self.extrema_data.clear()  # Clear existing extrema data
+
             for key, derivative_data in self.original_data.items():
                 data_within = derivative_data[indices]
 
@@ -162,11 +165,16 @@ class DataApp:
                     global_max_indices = np.where(indices)[0][local_max_indices]
                     global_min_indices = np.where(indices)[0][local_min_indices]
 
-                    # Use local indices to access values within data_within, global indices for the time
+                    # Plot maxima and minima
                     max_plots = self.ax.plot(time_array[global_max_indices], data_within[local_max_indices], 'go')
                     min_plots = self.ax.plot(time_array[global_min_indices], data_within[local_min_indices], 'ro')
 
                     self.extrema_plots.extend(max_plots + min_plots)
+
+                    # Store the extrema data for export
+                    self.extrema_data[key] = [(time_array[idx], derivative_data[idx]) for idx in global_max_indices]
+                    self.extrema_data[key].extend(
+                        [(time_array[idx], derivative_data[idx]) for idx in global_min_indices])
 
             self.canvas.draw()
 
