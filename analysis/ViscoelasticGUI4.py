@@ -561,8 +561,8 @@ class DataAnalyzerApp:
                 zipf.writestr('frequency_data.csv', frequency_data_csv)
 
             # Save the console output to zip
-            console_output = self.console.get(1.0, tk.END)
-            zipf.writestr('console_output.txt', console_output)
+            # console_output = self.console.get(1.0, tk.END)
+            # zipf.writestr('console_output.txt', console_output)
 
             # Save report text to zip
             report_text = self.generate_report_text()
