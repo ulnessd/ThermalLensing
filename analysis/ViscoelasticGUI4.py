@@ -72,6 +72,31 @@ class DataAnalyzerApp:
         self.load_button = Button(control_frame, text="Load Data", command=self.load_data)
         self.load_button.pack()
 
+        # Adding Start Time and End Time text boxes
+        self.start_time_label = Label(control_frame, text="Start Time:")
+        self.start_time_label.pack()
+        self.start_time_var = StringVar()
+        self.start_time_var.set(".65")
+        self.start_time_entry = Entry(control_frame, textvariable=self.start_time_var)
+        self.start_time_entry.pack()
+
+        self.end_time_label = Label(control_frame, text="End Time:")
+        self.end_time_label.pack()
+        self.end_time_var = StringVar()
+        self.end_time_var.set("1")
+        self.end_time_entry = Entry(control_frame, textvariable=self.end_time_var)
+        self.end_time_entry.pack()
+
+        self.calculate_baseline_button = Button(control_frame, text="Calculate Baseline", command=self.calculate_baseline)
+        self.calculate_baseline_button.pack()
+
+        self.baseline_label = Label(control_frame, text="Baseline:")
+        self.baseline_label.pack()
+        self.baseline_var = StringVar()
+        self.baseline_var.set("2.0")
+        self.baseline_entry = Entry(control_frame, textvariable=self.baseline_var, state='readonly')
+        self.baseline_entry.pack()
+
         self.refresh_button = Button(control_frame, text="Refresh", command=self.refresh_plot)
         self.refresh_button.pack()
 
@@ -84,7 +109,7 @@ class DataAnalyzerApp:
         self.quit_button = Button(control_frame, text="Quit", command=self.quit_app)
         self.quit_button.pack()
 
-        self.console = Text(master, height=4)
+        self.console = Text(master, height=8)
         self.console.pack(fill=tk.BOTH, expand=True)
 
         self.data = None
@@ -116,15 +141,15 @@ class DataAnalyzerApp:
             self.console.insert(tk.END, "Invalid enhanced sampling value. Please enter a valid integer.\n")
             return  # Exit if the conversion fails
 
-        fine_time = np.linspace(self.time.min(), self.time.max(), len(self.time) * enhanced_sampling)
+        self.fine_time = np.linspace(self.time.min(), self.time.max(), len(self.time) * enhanced_sampling)
 
         self.ax_raw.clear()
         self.ax_deriv.clear()
 
         if self.avg_check_var.get():
-            self.plot_average_data(fine_time)
+            self.plot_average_data(self.fine_time)
         else:
-            self.plot_individual_runs(fine_time)
+            self.plot_individual_runs(self.fine_time)
 
         self.canvas_raw.draw()
         self.update_derivative_plot_with_prominence(None, None, None)
@@ -285,6 +310,7 @@ class DataAnalyzerApp:
             self.console.insert(tk.END, f"Selected Fit Slope: {slope:.4f}, Intercept: {intercept:.4f}\n")
             self.console.insert(tk.END, f"Slope CI: {slope_ci[0]:.4f} to {slope_ci[1]:.4f}\n")
             self.console.insert(tk.END, f"Intercept CI: {intercept_ci[0]:.4f} to {intercept_ci[1]:.4f}\n")
+            self.console.insert(tk.END, f"Slope/Intercept: {slope/intercept:.4f}\n")
 
         self.canvas_freq.draw()
 
@@ -332,6 +358,41 @@ class DataAnalyzerApp:
             times, frequencies = zip(*self.freq_set)
             frequency_data = pd.DataFrame({'Time': times, 'Frequency': frequencies})
             frequency_data.to_csv(filepath, index=False)
+
+    def calculate_baseline(self):
+        try:
+            start_time = float(self.start_time_var.get())
+            end_time = float(self.end_time_var.get())
+
+            if start_time >= end_time:
+                self.console.insert(tk.END, "Start time must be less than end time.\n")
+                return
+
+            if self.fine_time is None:
+                self.console.insert(tk.END, "No data loaded or fine_time not initialized.\n")
+                return
+
+            mask = (self.fine_time >= start_time) & (self.fine_time <= end_time)
+
+            if self.avg_check_var.get() and self.current_derivative is not None:
+                data_to_average = self.current_derivative[mask]
+            else:
+                data_to_average = []
+                for column in self.data.columns[1:]:
+                    run_data = self.data[column]
+                    spline = UnivariateSpline(self.time, run_data, s=0)
+                    derivative = spline.derivative()(self.fine_time)
+                    data_to_average.extend(derivative[mask])
+
+            if len(data_to_average) == 0:
+                self.console.insert(tk.END, "No data points found in the specified range.\n")
+                return
+
+            baseline = np.mean(data_to_average)
+            self.baseline_var.set(f"{baseline:.4f}")
+            self.console.insert(tk.END, f"Calculated baseline: {baseline:.4f}\n")
+        except ValueError as e:
+            self.console.insert(tk.END, f"Error: {str(e)}\n")
 
     def save_report(self, directory, report_text):
         filepath = os.path.join(directory, 'report.txt')
