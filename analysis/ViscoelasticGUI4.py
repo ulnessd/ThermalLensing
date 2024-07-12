@@ -8,6 +8,7 @@ import pandas as pd
 from scipy.interpolate import UnivariateSpline
 from scipy.signal import find_peaks
 from scipy.stats import linregress
+from scipy.optimize import curve_fit
 import os
 import zipfile
 
@@ -16,9 +17,6 @@ class DataAnalyzerApp:
     def __init__(self, master):
         self.master = master
         self.master.title("Comprehensive Data Analysis Tool")
-
-        # Initialize line to None
-        self.line = None
 
         # Setting up frames for layout
         top_frame = tk.Frame(self.master)
@@ -73,23 +71,24 @@ class DataAnalyzerApp:
         self.load_button = Button(control_frame, text="Load Data", command=self.load_data)
         self.load_button.pack()
 
-        # Adding Start Time and End Time text boxes
+        self.console = Text(master, height=4)
+        self.console.pack(fill=tk.BOTH, expand=True)
+
+        self.start_time_var = StringVar(value="0")
+        self.start_time_var.set("0.65")
+        self.end_time_var = StringVar(value="0")
+        self.end_time_var.set("1")
+        self.baseline_var = StringVar()
+
         self.start_time_label = Label(control_frame, text="Start Time:")
         self.start_time_label.pack()
-        self.start_time_var = StringVar()
-        self.start_time_var.set(".65")
         self.start_time_entry = Entry(control_frame, textvariable=self.start_time_var)
         self.start_time_entry.pack()
 
         self.end_time_label = Label(control_frame, text="End Time:")
         self.end_time_label.pack()
-        self.end_time_var = StringVar()
-        self.end_time_var.set("1")
         self.end_time_entry = Entry(control_frame, textvariable=self.end_time_var)
         self.end_time_entry.pack()
-
-        self.calculate_baseline_button = Button(control_frame, text="Calculate Baseline", command=self.calculate_baseline)
-        self.calculate_baseline_button.pack()
 
         self.baseline_label = Label(control_frame, text="Baseline:")
         self.baseline_label.pack()
@@ -98,29 +97,50 @@ class DataAnalyzerApp:
         self.baseline_entry = Entry(control_frame, textvariable=self.baseline_var, state='readonly')
         self.baseline_entry.pack()
 
+
+        self.calculate_baseline_button = Button(control_frame, text="Calculate Baseline",
+                                                command=self.calculate_baseline)
+        self.calculate_baseline_button.pack()
+
+        self.A_guess_var = StringVar(value="5")
+        self.k_guess_var = StringVar(value="8")
+        self.t0_var = StringVar(value="0")
+
+        self.A_label = Label(control_frame, text="Initial guess for A:")
+        self.A_label.pack()
+        self.A_entry = Entry(control_frame, textvariable=self.A_guess_var)
+        self.A_entry.pack()
+
+        self.k_label = Label(control_frame, text="Initial guess for k:")
+        self.k_label.pack()
+        self.k_entry = Entry(control_frame, textvariable=self.k_guess_var)
+        self.k_entry.pack()
+
+        self.t0_label = Label(control_frame, text="t0:")
+        self.t0_label.pack()
+        self.t0_entry = Entry(control_frame, textvariable=self.t0_var)
+        self.t0_entry.pack()
+
+        self.fit_extrema_button = Button(control_frame, text="Fit Extrema", command=self.fit_extrema)
+        self.fit_extrema_button.pack()
+
         self.refresh_button = Button(control_frame, text="Refresh", command=self.refresh_plot)
         self.refresh_button.pack()
 
-        self.report_button = Button(control_frame, text="Create Report", command=self.create_report)
-        self.report_button.pack()
-
-        self.dump_graphs_button = Button(control_frame, text="Dump Graphs", command=self.dump_graphs)
-        self.dump_graphs_button.pack()
+        self.save_button = Button(control_frame, text="Save Report", command=self.save_report)
+        self.save_button.pack()
 
         self.quit_button = Button(control_frame, text="Quit", command=self.quit_app)
         self.quit_button.pack()
 
-        self.console = Text(master, height=8)
-        self.console.pack(fill=tk.BOTH, expand=True)
-
         self.data = None
         self.time = None
         self.fine_time = None
-        self.current_derivative = None
+        self.current_derivative = None  # Initialize the current_derivative attribute
         self.freq_set = []
 
-        self.setup_canvas_bindings()
-
+        self.setup_canvas_bindings() #Stuff for mouse drag
+        self.line = None
     def quit_app(self):
         self.master.quit()
 
@@ -308,12 +328,13 @@ class DataAnalyzerApp:
             fit_x = np.linspace(min(selected_times), max(selected_times), 100)
             self.ax_freq.plot(fit_x, fit_line(fit_x), 'r--')
 
-            self.console.insert(tk.END, f"Selected Fit Slope: {slope:.4f} +/- {(slope_ci[1]-slope_ci[0])/2:.4f} , Intercept: {intercept:.4f}  +/- {(intercept_ci[1]-intercept_ci[0])/2:.4f}\n")
-            #self.console.insert(tk.END, f"Slope CI: {slope_ci[0]:.4f} to {slope_ci[1]:.4f}\n")
-            #self.console.insert(tk.END, f"Intercept CI: {intercept_ci[0]:.4f} to {intercept_ci[1]:.4f}\n")
-            self.console.insert(tk.END, f"Slope/Intercept: {slope/intercept:.4f} +/- {- slope/intercept*math.sqrt((slope_ci[1]-slope_ci[0])/(2*slope)+(intercept_ci[1]-intercept_ci[0])/(2*intercept))} \n")
+            self.console.insert(tk.END,
+                                f"Selected Fit Slope: {slope:.4f} +/- {(slope_ci[1] - slope_ci[0]) / 2:.4f}, Intercept: {intercept:.4f} +/- {(intercept_ci[1] - intercept_ci[0]) / 2:.4f}\n")
+            self.console.insert(tk.END,
+                                f"Slope/Intercept: {slope / intercept:.4f} +/- {-slope / intercept * math.sqrt((slope_ci[1] - slope_ci[0]) / (2 * slope) + (intercept_ci[1] - intercept_ci[0]) / (2 * intercept))}\n")
 
         self.canvas_freq.draw()
+
 
 
     def save_raw_data(self, directory):
@@ -393,9 +414,73 @@ class DataAnalyzerApp:
             std_dev = np.std(data_to_average)
             self.baseline_var.set(f"{baseline:.4f}")
             self.console.insert(tk.END, f"Calculated baseline: {baseline:.4f} +/- {std_dev:.4f}\n")
-            #self.console.insert(tk.END, f"Standard deviation: {std_dev:.4f}\n")
         except ValueError as e:
             self.console.insert(tk.END, f"Error: {str(e)}\n")
+
+    def exp_decay_max(self, t, A, k, t0, baseline):
+        return A * np.exp(-k * (t - t0)) + baseline
+
+    def exp_decay_min(self, t, A, k, t0, baseline):
+        return -A * np.exp(-k * (t - t0)) + baseline
+
+    def fit_extrema(self):
+        try:
+            A_guess = float(self.A_guess_var.get())
+            k_guess = float(self.k_guess_var.get())
+            t0 = float(self.t0_var.get())
+            baseline = float(self.baseline_var.get())
+
+            if not self.freq_set:
+                self.console.insert(tk.END, "No frequency data available.\n")
+                return
+
+            # Separate the peak and trough times and frequencies
+            peak_times = [t for t, f in self.freq_set if f > baseline]
+            peak_frequencies = [f for t, f in self.freq_set if f > baseline]
+            trough_times = [t for t, f in self.freq_set if f < baseline]
+            trough_frequencies = [f for t, f in self.freq_set if f < baseline]
+
+            # Only include maxes that are at times larger than the first min
+            if trough_times:
+                min_time_threshold = min(trough_times)
+                peak_times = [t for t in peak_times if t > min_time_threshold]
+                peak_frequencies = [f for t, f in zip(peak_times, peak_frequencies) if t > min_time_threshold]
+
+            # Fit peaks
+            if peak_times and peak_frequencies:
+                popt_max, pcov_max = curve_fit(self.exp_decay_max, peak_times, peak_frequencies,
+                                               p0=[A_guess, k_guess, t0, baseline])
+                A_max, k_max = popt_max[0], popt_max[1]
+                std_devs_max = np.sqrt(np.diag(pcov_max))
+                self.console.insert(tk.END, f"Fit Parameters for Peaks: A = {A_max:.4f}, k = {k_max:.4f}\n")
+                self.console.insert(tk.END,
+                                    f"Confidence Intervals for Peaks: A = {std_devs_max[0]:.4f}, k = {std_devs_max[1]:.4f}\n")
+
+                # Plot the fit
+                fit_times = np.linspace(min(peak_times), max(peak_times), 100)
+                fit_values = self.exp_decay_max(fit_times, *popt_max)
+                self.ax_freq.plot(fit_times, fit_values, 'r-', label='Fit for Peaks')
+
+            # Fit troughs
+            if trough_times and trough_frequencies:
+                popt_min, pcov_min = curve_fit(self.exp_decay_min, trough_times, trough_frequencies,
+                                               p0=[A_guess, k_guess, t0, baseline])
+                A_min, k_min = popt_min[0], popt_min[1]
+                std_devs_min = np.sqrt(np.diag(pcov_min))
+                self.console.insert(tk.END, f"Fit Parameters for Troughs: A = {A_min:.4f}, k = {k_min:.4f}\n")
+                self.console.insert(tk.END,
+                                    f"Confidence Intervals for Troughs: A = {std_devs_min[0]:.4f}, k = {std_devs_min[1]:.4f}\n")
+
+                # Plot the fit
+                fit_times = np.linspace(min(trough_times), max(trough_times), 100)
+                fit_values = self.exp_decay_min(fit_times, *popt_min)
+                self.ax_freq.plot(fit_times, fit_values, 'b-', label='Fit for Troughs')
+
+            self.ax_freq.legend()
+            self.canvas_freq.draw()
+
+        except Exception as e:
+            self.console.insert(tk.END, f"Error in fitting extrema: {str(e)}\n")
 
     def save_report(self, directory, report_text):
         filepath = os.path.join(directory, 'report.txt')
