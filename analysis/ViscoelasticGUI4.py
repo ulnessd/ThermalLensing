@@ -1,3 +1,4 @@
+import math
 import tkinter as tk
 from tkinter import filedialog, Label, Entry, Button, Checkbutton, IntVar, StringVar, Text
 from matplotlib.figure import Figure
@@ -307,10 +308,10 @@ class DataAnalyzerApp:
             fit_x = np.linspace(min(selected_times), max(selected_times), 100)
             self.ax_freq.plot(fit_x, fit_line(fit_x), 'r--')
 
-            self.console.insert(tk.END, f"Selected Fit Slope: {slope:.4f}, Intercept: {intercept:.4f}\n")
-            self.console.insert(tk.END, f"Slope CI: {slope_ci[0]:.4f} to {slope_ci[1]:.4f}\n")
-            self.console.insert(tk.END, f"Intercept CI: {intercept_ci[0]:.4f} to {intercept_ci[1]:.4f}\n")
-            self.console.insert(tk.END, f"Slope/Intercept: {slope/intercept:.4f}\n")
+            self.console.insert(tk.END, f"Selected Fit Slope: {slope:.4f} +/- {(slope_ci[1]-slope_ci[0])/2:.4f} , Intercept: {intercept:.4f}  +/- {(intercept_ci[1]-intercept_ci[0])/2:.4f}\n")
+            #self.console.insert(tk.END, f"Slope CI: {slope_ci[0]:.4f} to {slope_ci[1]:.4f}\n")
+            #self.console.insert(tk.END, f"Intercept CI: {intercept_ci[0]:.4f} to {intercept_ci[1]:.4f}\n")
+            self.console.insert(tk.END, f"Slope/Intercept: {slope/intercept:.4f} +/- {- slope/intercept*math.sqrt((slope_ci[1]-slope_ci[0])/(2*slope)+(intercept_ci[1]-intercept_ci[0])/(2*intercept))} \n")
 
         self.canvas_freq.draw()
 
@@ -389,8 +390,10 @@ class DataAnalyzerApp:
                 return
 
             baseline = np.mean(data_to_average)
+            std_dev = np.std(data_to_average)
             self.baseline_var.set(f"{baseline:.4f}")
-            self.console.insert(tk.END, f"Calculated baseline: {baseline:.4f}\n")
+            self.console.insert(tk.END, f"Calculated baseline: {baseline:.4f} +/- {std_dev:.4f}\n")
+            #self.console.insert(tk.END, f"Standard deviation: {std_dev:.4f}\n")
         except ValueError as e:
             self.console.insert(tk.END, f"Error: {str(e)}\n")
 
