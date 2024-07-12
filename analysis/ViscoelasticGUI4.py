@@ -78,6 +78,9 @@ class DataAnalyzerApp:
         self.report_button = Button(control_frame, text="Create Report", command=self.create_report)
         self.report_button.pack()
 
+        self.dump_graphs_button = Button(control_frame, text="Dump Graphs", command=self.dump_graphs)
+        self.dump_graphs_button.pack()
+
         self.quit_button = Button(control_frame, text="Quit", command=self.quit_app)
         self.quit_button.pack()
 
@@ -368,6 +371,22 @@ class DataAnalyzerApp:
         self.console.delete(1.0, tk.END)
         self.freq_set = []
         self.update_plot()
+
+    def save_graphs(self, directory):
+        raw_graph_path = os.path.join(directory, 'raw_data.png')
+        deriv_graph_path = os.path.join(directory, 'derivative_data.png')
+        freq_graph_path = os.path.join(directory, 'frequency_data.png')
+
+        self.fig_raw.savefig(raw_graph_path, dpi=600)
+        self.fig_deriv.savefig(deriv_graph_path, dpi=600)
+        self.fig_freq.savefig(freq_graph_path, dpi=600)
+
+    def dump_graphs(self):
+        directory = filedialog.askdirectory()
+        if not directory:
+            return
+        self.save_graphs(directory)
+        self.console.insert(tk.END, f"Graphs saved to {directory}\n")
 
 
 root = tk.Tk()
