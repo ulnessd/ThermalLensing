@@ -604,6 +604,7 @@ root.mainloop()
 
 
 
+
 root = tk.Tk()
 app = DataAnalyzerApp(root)
 root.mainloop()
