@@ -431,18 +431,36 @@ class DataAnalyzerApp:
     def exp_decay_min(self, t, A, k, t0, baseline):
         return -A * np.exp(-k * (t - t0)) + baseline
 
+    import numpy as np
+    from scipy.optimize import curve_fit
+    import tkinter as tk
+
+    def exp_decay_max(t, A, k, t0, baseline):
+        return A * np.exp(-k * (t - t0)) + baseline
+
+    def exp_decay_min(t, A, k, t0, baseline):
+        return -A * np.exp(-k * (t - t0)) + baseline
+
     def fit_extrema(self):
+        def exp_decay_max(t, A, k):
+            return A * np.exp(-k * (t - t0)) + baseline
+
+        def exp_decay_min(t, A, k):
+            return -A * np.exp(-k * (t - t0)) + baseline
+
         try:
+            # Get initial guesses and user-defined t0
             A_guess = float(self.A_guess_var.get())
             k_guess = float(self.k_guess_var.get())
             t0 = float(self.t0_var.get())
             baseline = float(self.baseline_var.get())
 
+            # Check if peak and trough data are available
             if not self.peak_times or not self.trough_times:
                 self.console.insert(tk.END, "No peak or trough data available.\n")
                 return
 
-            # Only include maxes that are at times larger than the first min
+            # Filter peaks to include only those times larger than the first trough time
             if self.trough_times:
                 min_time_threshold = min(self.trough_times)
                 filtered_peak_times = [t for t in self.peak_times if t > min_time_threshold]
@@ -451,34 +469,55 @@ class DataAnalyzerApp:
                 filtered_peak_times = self.peak_times
                 filtered_peak_values = self.peak_values
 
+            print(f"Baseline used in fitting: {baseline}")
+
             # Fit peaks
             if filtered_peak_times and filtered_peak_values:
-                popt_max, pcov_max = curve_fit(self.exp_decay_max, filtered_peak_times, filtered_peak_values,
-                                               p0=[A_guess, k_guess, t0, baseline])
-                A_max, k_max = popt_max[0], popt_max[1]
+                popt_max, pcov_max = curve_fit(
+                    exp_decay_max, filtered_peak_times, filtered_peak_values,
+                    p0=[A_guess, k_guess],
+                    bounds=([0, 0], [np.inf, np.inf])
+                )
+                A_max, k_max = popt_max
                 std_devs_max = np.sqrt(np.diag(pcov_max))
+
+                # Calculate confidence intervals
+                ci_max = 1.96 * std_devs_max  # For 95% confidence
+                A_max_low, A_max_high = A_max - ci_max[0], A_max + ci_max[0]
+                k_max_low, k_max_high = k_max - ci_max[1], k_max + ci_max[1]
+
                 self.console.insert(tk.END, f"Fit Parameters for Peaks: A = {A_max:.4f}, k = {k_max:.4f}\n")
                 self.console.insert(tk.END,
-                                    f"Confidence Intervals for Peaks: A = {std_devs_max[0]:.4f}, k = {std_devs_max[1]:.4f}\n")
+                                    f"Confidence Intervals for Peaks: A = [{A_max_low:.4f}, {A_max_high:.4f}], k = [{k_max_low:.4f}, {k_max_high:.4f}]\n")
 
                 # Plot the fit
-                fit_times = np.linspace(min(filtered_peak_times), max(filtered_peak_times), 100)
-                fit_values = self.exp_decay_max(fit_times, *popt_max)
+                fit_times = np.linspace(min(filtered_peak_times), max(filtered_peak_times) + 0.5, 100)
+                fit_values = exp_decay_max(fit_times, A_max, k_max)
                 self.ax_deriv.plot(fit_times, fit_values, 'r-', label='Fit for Peaks')
 
             # Fit troughs
             if self.trough_times and self.trough_values:
-                popt_min, pcov_min = curve_fit(self.exp_decay_min, self.trough_times, self.trough_values,
-                                               p0=[A_guess, k_guess, t0, baseline])
-                A_min, k_min = popt_min[0], popt_min[1]
+                popt_min, pcov_min = curve_fit(
+                    exp_decay_min, self.trough_times, self.trough_values,
+                    p0=[A_guess, k_guess],
+                    bounds=([0, 0], [np.inf, np.inf])
+                )
+                A_min, k_min = popt_min
                 std_devs_min = np.sqrt(np.diag(pcov_min))
+                print(f"Baseline used in fitting: {baseline}")
+
+                # Calculate confidence intervals
+                ci_min = 1.96 * std_devs_min  # For 95% confidence
+                A_min_low, A_min_high = A_min - ci_min[0], A_min + ci_min[0]
+                k_min_low, k_min_high = k_min - ci_min[1], k_min + ci_min[1]
+
                 self.console.insert(tk.END, f"Fit Parameters for Troughs: A = {A_min:.4f}, k = {k_min:.4f}\n")
                 self.console.insert(tk.END,
-                                    f"Confidence Intervals for Troughs: A = {std_devs_min[0]:.4f}, k = {std_devs_min[1]:.4f}\n")
+                                    f"Confidence Intervals for Troughs: A = [{A_min_low:.4f}, {A_min_high:.4f}], k = [{k_min_low:.4f}, {k_min_high:.4f}]\n")
 
                 # Plot the fit
-                fit_times = np.linspace(min(self.trough_times), max(self.trough_times), 100)
-                fit_values = self.exp_decay_min(fit_times, *popt_min)
+                fit_times = np.linspace(min(self.trough_times), max(self.trough_times) + 0.5, 100)
+                fit_values = exp_decay_min(fit_times, A_min, k_min)
                 self.ax_deriv.plot(fit_times, fit_values, 'b-', label='Fit for Troughs')
 
             self.ax_deriv.legend()
@@ -541,6 +580,12 @@ class DataAnalyzerApp:
             return
         self.save_graphs(directory)
         self.console.insert(tk.END, f"Graphs saved to {directory}\n")
+
+
+root = tk.Tk()
+app = DataAnalyzerApp(root)
+root.mainloop()
+
 
 
 root = tk.Tk()
