@@ -16,7 +16,7 @@ import zipfile
 class DataAnalyzerApp:
     def __init__(self, master):
         self.master = master
-        self.master.title("Comprehensive Data Analysis Tool")
+        self.master.title("Viscoelastic Data Analysis")
 
         # Setting up frames for layout
         top_frame = tk.Frame(self.master)
@@ -71,7 +71,7 @@ class DataAnalyzerApp:
         self.load_button = Button(control_frame, text="Load Data", command=self.load_data)
         self.load_button.pack()
 
-        self.console = Text(master, height=4)
+        self.console = Text(master, height=8)
         self.console.pack(fill=tk.BOTH, expand=True)
 
         self.start_time_var = StringVar(value="0")
@@ -132,7 +132,7 @@ class DataAnalyzerApp:
         self.refresh_button = Button(control_frame, text="Refresh", command=self.refresh_plot)
         self.refresh_button.pack()
 
-        self.save_button = Button(control_frame, text="Save Report", command=self.save_report)
+        self.save_button = Button(control_frame, text="Save Report", command=self.create_report)
         self.save_button.pack()
 
         self.quit_button = Button(control_frame, text="Quit", command=self.quit_app)
@@ -181,12 +181,18 @@ class DataAnalyzerApp:
         self.update_derivative_plot_with_prominence(None, None, None)
 
     def plot_individual_runs(self, fine_time):
+        self.ax_raw.set_title('Area Data')
+        self.ax_raw.set_xlabel('Time (s)')
+        self.ax_raw.set_ylabel('mm^2')
         for column in self.data.columns[1:]:
             run_data = self.data[column]
             spline = UnivariateSpline(self.time, run_data, s=0)
             self.ax_raw.plot(fine_time, spline(fine_time), '-')
 
     def plot_average_data(self, fine_time):
+        self.ax_raw.set_title('Area Data')
+        self.ax_raw.set_xlabel('Time (s)')
+        self.ax_raw.set_ylabel('mm^2')
         avg_data = np.mean(self.data.iloc[:, 1:], axis=1)
         spline_avg = UnivariateSpline(self.time, avg_data, s=0)
         self.ax_raw.plot(fine_time, spline_avg(fine_time), '-')
@@ -202,6 +208,10 @@ class DataAnalyzerApp:
         fine_time = np.linspace(self.time.min(), self.time.max(), len(self.time) * enhanced_sampling)
         self.ax_deriv.clear()
         self.ax_freq.clear()
+        self.ax_deriv.set_title('Interpolation Derivative')
+        self.ax_deriv.set_xlabel('Time (s)')
+        self.ax_deriv.set_ylabel('mm^2/s')
+
 
         self.peak_times = []
         self.peak_values = []
@@ -343,52 +353,6 @@ class DataAnalyzerApp:
 
         self.canvas_freq.draw()
 
-
-
-    def save_raw_data(self, directory):
-        filepath = os.path.join(directory, 'raw_data.csv')
-        self.data.to_csv(filepath, index=False)
-
-    def save_derivative_data(self, directory):
-        filepath = os.path.join(directory, 'derivative_data.csv')
-        enhanced_sampling = int(self.sampling_var.get())
-        fine_time = np.linspace(self.time.min(), self.time.max(), len(self.time) * enhanced_sampling)
-        derivatives = pd.DataFrame({'Time': fine_time})
-
-        if self.avg_check_var.get():
-            avg_data = np.mean(self.data.iloc[:, 1:], axis=1)
-            spline_avg = UnivariateSpline(self.time, avg_data, s=0)
-            derivative_avg = spline_avg.derivative()(fine_time)
-            peaks, _ = find_peaks(derivative_avg,
-                                  prominence=float(self.prominence_var.get()) / 100 * max(abs(derivative_avg)))
-            troughs, _ = find_peaks(-derivative_avg,
-                                    prominence=float(self.prominence_var.get()) / 100 * max(abs(derivative_avg)))
-            derivatives['Average_Derivative'] = derivative_avg
-        else:
-            for column in self.data.columns[1:]:
-                run_data = self.data[column]
-                spline = UnivariateSpline(self.time, run_data, s=0)
-                derivative = spline.derivative()(fine_time)
-                peaks, _ = find_peaks(derivative,
-                                      prominence=float(self.prominence_var.get()) / 100 * max(abs(derivative)))
-                troughs, _ = find_peaks(-derivative,
-                                        prominence=float(self.prominence_var.get()) / 100 * max(abs(derivative)))
-                derivatives[f'{column}_Derivative'] = derivative
-
-        derivatives.to_csv(filepath, index=False)
-
-        # Save peaks and troughs separately
-        peaks_troughs_filepath = os.path.join(directory, 'peaks_troughs.csv')
-        peaks_troughs_data = pd.DataFrame({'Peak Times': fine_time[peaks], 'Trough Times': fine_time[troughs]})
-        peaks_troughs_data.to_csv(peaks_troughs_filepath, index=False)
-
-    def save_frequency_data(self, directory):
-        filepath = os.path.join(directory, 'frequency_data.csv')
-        if self.freq_set:
-            times, frequencies = zip(*self.freq_set)
-            frequency_data = pd.DataFrame({'Time': times, 'Frequency': frequencies})
-            frequency_data.to_csv(filepath, index=False)
-
     def calculate_baseline(self):
         try:
             start_time = float(self.start_time_var.get())
@@ -469,7 +433,6 @@ class DataAnalyzerApp:
                 filtered_peak_times = self.peak_times
                 filtered_peak_values = self.peak_values
 
-            print(f"Baseline used in fitting: {baseline}")
 
             # Fit peaks
             if filtered_peak_times and filtered_peak_values:
@@ -486,9 +449,11 @@ class DataAnalyzerApp:
                 A_max_low, A_max_high = A_max - ci_max[0], A_max + ci_max[0]
                 k_max_low, k_max_high = k_max - ci_max[1], k_max + ci_max[1]
 
-                self.console.insert(tk.END, f"Fit Parameters for Peaks: A = {A_max:.4f}, k = {k_max:.4f}\n")
+
                 self.console.insert(tk.END,
-                                    f"Confidence Intervals for Peaks: A = [{A_max_low:.4f}, {A_max_high:.4f}], k = [{k_max_low:.4f}, {k_max_high:.4f}]\n")
+                                    f"Fit Parameters for Peaks: A = {A_max:.4f} +/- {(A_max_high - A_max_low) / 2:.4f}, k = {k_max:.4f} +/- {(k_max_high - k_max_low) / 2:.4f}\n")
+                #self.console.insert(tk.END,
+                                  #  f"Confidence Intervals for Peaks: A = [{A_max_low:.4f}, {A_max_high:.4f}], k = [{k_max_low:.4f}, {k_max_high:.4f}]\n")
 
                 # Plot the fit
                 fit_times = np.linspace(min(filtered_peak_times), max(filtered_peak_times) + 0.5, 100)
@@ -504,87 +469,138 @@ class DataAnalyzerApp:
                 )
                 A_min, k_min = popt_min
                 std_devs_min = np.sqrt(np.diag(pcov_min))
-                print(f"Baseline used in fitting: {baseline}")
+
 
                 # Calculate confidence intervals
                 ci_min = 1.96 * std_devs_min  # For 95% confidence
                 A_min_low, A_min_high = A_min - ci_min[0], A_min + ci_min[0]
                 k_min_low, k_min_high = k_min - ci_min[1], k_min + ci_min[1]
 
-                self.console.insert(tk.END, f"Fit Parameters for Troughs: A = {A_min:.4f}, k = {k_min:.4f}\n")
-                self.console.insert(tk.END,
-                                    f"Confidence Intervals for Troughs: A = [{A_min_low:.4f}, {A_min_high:.4f}], k = [{k_min_low:.4f}, {k_min_high:.4f}]\n")
+                self.console.insert(tk.END, f"Fit Parameters for Troughs: A = {A_min:.4f} +/- {(A_min_high-A_min_low)/2:.4f}, k = {k_min:.4f} +/- {(k_min_high-k_min_low)/2:.4f}\n")
+                #self.console.insert(tk.END,
+                                   # f"Confidence Intervals for Troughs: A = [{A_min_low:.4f}, {A_min_high:.4f}], k = [{k_min_low:.4f}, {k_min_high:.4f}]\n")
 
                 # Plot the fit
                 fit_times = np.linspace(min(self.trough_times), max(self.trough_times) + 0.5, 100)
                 fit_values = exp_decay_min(fit_times, A_min, k_min)
                 self.ax_deriv.plot(fit_times, fit_values, 'b-', label='Fit for Troughs')
 
-            self.ax_deriv.legend()
+            #self.ax_deriv.legend()
             self.canvas_deriv.draw()
 
         except Exception as e:
             self.console.insert(tk.END, f"Error in fitting extrema: {str(e)}\n")
 
-    def save_report(self, directory, report_text):
-        filepath = os.path.join(directory, 'report.txt')
-        with open(filepath, 'w') as file:
-            file.write(report_text)
-
     def generate_report_text(self):
-        report_text = f"Sample Name: {self.master.title()}\n\n"
-        if self.freq_set:
-            times, frequencies = zip(*self.freq_set)
-            slope, intercept, r_value, p_value, std_err = linregress(times, frequencies)
-            slope_ci = (slope - 1.96 * std_err, slope + 1.96 * std_err)
-            intercept_ci = (intercept - 1.96 * std_err, intercept + 1.96 * std_err)
-            report_text += f"Slope: {slope:.4f}, CI: {slope_ci}\n"
-            report_text += f"Intercept: {intercept:.4f}, CI: {intercept_ci}\n"
-        return report_text
+        # Get console contents
+        console_text = self.console.get(1.0, tk.END)
+        return console_text
 
-    def zip_files(self, directory):
-        zip_filename = os.path.join(directory, 'report.zip')
-        with zipfile.ZipFile(zip_filename, 'w') as zipf:
-            for file in ['raw_data.csv', 'derivative_data.csv', 'frequency_data.csv', 'report.txt']:
-                zipf.write(os.path.join(directory, file), arcname=file)
+    def save_report_to_zip(self, zip_filepath):
+        with zipfile.ZipFile(zip_filepath, 'w') as zipf:
+            # Save raw data to zip
+            raw_data_csv = self.data.to_csv(index=False)
+            zipf.writestr('raw_data.csv', raw_data_csv)
+
+            # Save derivative data to zip
+            enhanced_sampling = int(self.sampling_var.get())
+            fine_time = np.linspace(self.time.min(), self.time.max(), len(self.time) * enhanced_sampling)
+            derivatives = pd.DataFrame({'Time': fine_time})
+
+            all_peaks_times = []
+            all_peaks_values = []
+            all_troughs_times = []
+            all_troughs_values = []
+
+            if self.avg_check_var.get():
+                avg_data = np.mean(self.data.iloc[:, 1:], axis=1)
+                spline_avg = UnivariateSpline(self.time, avg_data, s=0)
+                derivative_avg = spline_avg.derivative()(fine_time)
+                peaks, _ = find_peaks(derivative_avg,
+                                      prominence=float(self.prominence_var.get()) / 100 * max(abs(derivative_avg)))
+                troughs, _ = find_peaks(-derivative_avg,
+                                        prominence=float(self.prominence_var.get()) / 100 * max(abs(derivative_avg)))
+                derivatives['Average_Derivative'] = derivative_avg
+
+                all_peaks_times.extend(fine_time[peaks])
+                all_peaks_values.extend(derivative_avg[peaks])
+                all_troughs_times.extend(fine_time[troughs])
+                all_troughs_values.extend(derivative_avg[troughs])
+            else:
+                for column in self.data.columns[1:]:
+                    run_data = self.data[column]
+                    spline = UnivariateSpline(self.time, run_data, s=0)
+                    derivative = spline.derivative()(fine_time)
+                    peaks, _ = find_peaks(derivative,
+                                          prominence=float(self.prominence_var.get()) / 100 * max(abs(derivative)))
+                    troughs, _ = find_peaks(-derivative,
+                                            prominence=float(self.prominence_var.get()) / 100 * max(abs(derivative)))
+                    derivatives[f'{column}_Derivative'] = derivative
+
+                    all_peaks_times.extend(fine_time[peaks])
+                    all_peaks_values.extend(derivative[peaks])
+                    all_troughs_times.extend(fine_time[troughs])
+                    all_troughs_values.extend(derivative[troughs])
+
+            derivative_data_csv = derivatives.to_csv(index=False)
+            zipf.writestr('derivative_data.csv', derivative_data_csv)
+
+            # Combine peaks and troughs into a single set of data with times and values
+            combined_peaks = pd.DataFrame({'Times': all_peaks_times, 'Values': all_peaks_values})
+            combined_troughs = pd.DataFrame({'Times': all_troughs_times, 'Values': all_troughs_values})
+
+            combined_data = pd.concat([combined_peaks, combined_troughs]).sort_values(by='Times')
+            combined_peaks_troughs_csv = combined_data.to_csv(index=False)
+            zipf.writestr('combined_peaks_troughs.csv', combined_peaks_troughs_csv)
+
+            # Save frequency data to zip
+            if self.freq_set:
+                times, frequencies = zip(*self.freq_set)
+                frequency_data = pd.DataFrame({'Time': times, 'Frequency': frequencies})
+                frequency_data_csv = frequency_data.to_csv(index=False)
+                zipf.writestr('frequency_data.csv', frequency_data_csv)
+
+            # Save the console output to zip
+            console_output = self.console.get(1.0, tk.END)
+            zipf.writestr('console_output.txt', console_output)
+
+            # Save report text to zip
+            report_text = self.generate_report_text()
+            zipf.writestr('report.txt', report_text)
+
+            # Save the graphs to the zip file
+            import io
+
+            def save_fig_to_zip(fig, zipf, filename):
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', dpi=600)
+                buf.seek(0)
+                zipf.writestr(filename, buf.read())
+
+            save_fig_to_zip(self.fig_raw, zipf, 'raw_data.png')
+            save_fig_to_zip(self.fig_deriv, zipf, 'derivative_data.png')
+            save_fig_to_zip(self.fig_freq, zipf, 'frequency_data.png')
+
+        self.console.insert(tk.END, f"Report created and saved to {zip_filepath}\n")
 
     def create_report(self):
-        directory = filedialog.askdirectory()
-        if not directory:
+        zip_filepath = filedialog.asksaveasfilename(defaultextension=".zip", filetypes=[("Zip files", "*.zip")])
+        if not zip_filepath:
             return
-        self.save_raw_data(directory)
-        self.save_derivative_data(directory)
-        self.save_frequency_data(directory)
-        report_text = self.generate_report_text()
-        self.save_report(directory, report_text)
-        self.zip_files(directory)
-        self.console.insert(tk.END, f"Report created and saved to {directory}\n")
+        self.save_report_to_zip(zip_filepath)
 
     def refresh_plot(self):
         self.console.delete(1.0, tk.END)
         self.freq_set = []
         self.update_plot()
 
-    def save_graphs(self, directory):
-        raw_graph_path = os.path.join(directory, 'raw_data.png')
-        deriv_graph_path = os.path.join(directory, 'derivative_data.png')
-        freq_graph_path = os.path.join(directory, 'frequency_data.png')
 
-        self.fig_raw.savefig(raw_graph_path, dpi=600)
-        self.fig_deriv.savefig(deriv_graph_path, dpi=600)
-        self.fig_freq.savefig(freq_graph_path, dpi=600)
-
-    def dump_graphs(self):
-        directory = filedialog.askdirectory()
-        if not directory:
-            return
-        self.save_graphs(directory)
-        self.console.insert(tk.END, f"Graphs saved to {directory}\n")
 
 
 root = tk.Tk()
 app = DataAnalyzerApp(root)
 root.mainloop()
+
 
 
 
