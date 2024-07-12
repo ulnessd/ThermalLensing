@@ -124,6 +124,11 @@ class DataAnalyzerApp:
         self.fit_extrema_button = Button(control_frame, text="Fit Extrema", command=self.fit_extrema)
         self.fit_extrema_button.pack()
 
+        self.peak_times = []
+        self.peak_values = []
+        self.trough_times = []
+        self.trough_values = []
+
         self.refresh_button = Button(control_frame, text="Refresh", command=self.refresh_plot)
         self.refresh_button.pack()
 
@@ -198,6 +203,11 @@ class DataAnalyzerApp:
         self.ax_deriv.clear()
         self.ax_freq.clear()
 
+        self.peak_times = []
+        self.peak_values = []
+        self.trough_times = []
+        self.trough_values = []
+
         if self.avg_check_var.get():
             avg_data = np.mean(self.data.iloc[:, 1:], axis=1)
             spline_avg = UnivariateSpline(self.time, avg_data, s=0)
@@ -212,13 +222,12 @@ class DataAnalyzerApp:
             self.ax_deriv.plot(fine_time[peaks], derivative_avg[peaks], 'go')
             self.ax_deriv.plot(fine_time[troughs], derivative_avg[troughs], 'ro')
 
-            # Print peaks and troughs times to the console
-            peak_times = fine_time[peaks]
-            trough_times = fine_time[troughs]
-            #self.console.insert(tk.END, f"Peak times: {peak_times}\n")
-            #self.console.insert(tk.END, f"Trough times: {trough_times}\n")
+            self.peak_times.extend(fine_time[peaks])
+            self.peak_values.extend(derivative_avg[peaks])
+            self.trough_times.extend(fine_time[troughs])
+            self.trough_values.extend(derivative_avg[troughs])
 
-            self.plot_frequencies(peak_times, trough_times)
+            self.plot_frequencies(fine_time[peaks], fine_time[troughs])
         else:
             for column in self.data.columns[1:]:
                 run_data = self.data[column]
@@ -234,13 +243,12 @@ class DataAnalyzerApp:
                 self.ax_deriv.plot(fine_time[peaks], derivative[peaks], 'go')
                 self.ax_deriv.plot(fine_time[troughs], derivative[troughs], 'ro')
 
-                # Print peaks and troughs times to the console
-                peak_times = fine_time[peaks]
-                trough_times = fine_time[troughs]
-                #self.console.insert(tk.END, f"Peak times: {peak_times}\n")
-                #self.console.insert(tk.END, f"Trough times: {trough_times}\n")
+                self.peak_times.extend(fine_time[peaks])
+                self.peak_values.extend(derivative[peaks])
+                self.trough_times.extend(fine_time[troughs])
+                self.trough_values.extend(derivative[troughs])
 
-                self.plot_frequencies(peak_times, trough_times)
+                self.plot_frequencies(fine_time[peaks], fine_time[troughs])
 
         self.canvas_deriv.draw()
 
@@ -430,25 +438,22 @@ class DataAnalyzerApp:
             t0 = float(self.t0_var.get())
             baseline = float(self.baseline_var.get())
 
-            if not self.freq_set:
-                self.console.insert(tk.END, "No frequency data available.\n")
+            if not self.peak_times or not self.trough_times:
+                self.console.insert(tk.END, "No peak or trough data available.\n")
                 return
 
-            # Separate the peak and trough times and frequencies
-            peak_times = [t for t, f in self.freq_set if f > baseline]
-            peak_frequencies = [f for t, f in self.freq_set if f > baseline]
-            trough_times = [t for t, f in self.freq_set if f < baseline]
-            trough_frequencies = [f for t, f in self.freq_set if f < baseline]
-
             # Only include maxes that are at times larger than the first min
-            if trough_times:
-                min_time_threshold = min(trough_times)
-                peak_times = [t for t in peak_times if t > min_time_threshold]
-                peak_frequencies = [f for t, f in zip(peak_times, peak_frequencies) if t > min_time_threshold]
+            if self.trough_times:
+                min_time_threshold = min(self.trough_times)
+                filtered_peak_times = [t for t in self.peak_times if t > min_time_threshold]
+                filtered_peak_values = [v for t, v in zip(self.peak_times, self.peak_values) if t > min_time_threshold]
+            else:
+                filtered_peak_times = self.peak_times
+                filtered_peak_values = self.peak_values
 
             # Fit peaks
-            if peak_times and peak_frequencies:
-                popt_max, pcov_max = curve_fit(self.exp_decay_max, peak_times, peak_frequencies,
+            if filtered_peak_times and filtered_peak_values:
+                popt_max, pcov_max = curve_fit(self.exp_decay_max, filtered_peak_times, filtered_peak_values,
                                                p0=[A_guess, k_guess, t0, baseline])
                 A_max, k_max = popt_max[0], popt_max[1]
                 std_devs_max = np.sqrt(np.diag(pcov_max))
@@ -457,13 +462,13 @@ class DataAnalyzerApp:
                                     f"Confidence Intervals for Peaks: A = {std_devs_max[0]:.4f}, k = {std_devs_max[1]:.4f}\n")
 
                 # Plot the fit
-                fit_times = np.linspace(min(peak_times), max(peak_times), 100)
+                fit_times = np.linspace(min(filtered_peak_times), max(filtered_peak_times), 100)
                 fit_values = self.exp_decay_max(fit_times, *popt_max)
-                self.ax_freq.plot(fit_times, fit_values, 'r-', label='Fit for Peaks')
+                self.ax_deriv.plot(fit_times, fit_values, 'r-', label='Fit for Peaks')
 
             # Fit troughs
-            if trough_times and trough_frequencies:
-                popt_min, pcov_min = curve_fit(self.exp_decay_min, trough_times, trough_frequencies,
+            if self.trough_times and self.trough_values:
+                popt_min, pcov_min = curve_fit(self.exp_decay_min, self.trough_times, self.trough_values,
                                                p0=[A_guess, k_guess, t0, baseline])
                 A_min, k_min = popt_min[0], popt_min[1]
                 std_devs_min = np.sqrt(np.diag(pcov_min))
@@ -472,12 +477,12 @@ class DataAnalyzerApp:
                                     f"Confidence Intervals for Troughs: A = {std_devs_min[0]:.4f}, k = {std_devs_min[1]:.4f}\n")
 
                 # Plot the fit
-                fit_times = np.linspace(min(trough_times), max(trough_times), 100)
+                fit_times = np.linspace(min(self.trough_times), max(self.trough_times), 100)
                 fit_values = self.exp_decay_min(fit_times, *popt_min)
-                self.ax_freq.plot(fit_times, fit_values, 'b-', label='Fit for Troughs')
+                self.ax_deriv.plot(fit_times, fit_values, 'b-', label='Fit for Troughs')
 
-            self.ax_freq.legend()
-            self.canvas_freq.draw()
+            self.ax_deriv.legend()
+            self.canvas_deriv.draw()
 
         except Exception as e:
             self.console.insert(tk.END, f"Error in fitting extrema: {str(e)}\n")
